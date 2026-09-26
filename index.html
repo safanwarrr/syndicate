@@ -484,7 +484,7 @@ function renderSplit(){
 /* ---------- briefing a new agent ---------- */
 function parseBriefLocally(text){
   const wants = {};
-  const clauses = text.split(/[.;]|,\s(?=and\s)|\band\b/i);
+  const clauses = text.replace(/(?:max(?:imum)?\s+)?budget\D{0,6}\d+/gi, "").replace(/auto-?approve[^£\d]*£?\s?\d+/gi, "").split(/[.;,]|\band\b/i);
   for (const c of clauses){
     const price = (c.match(/£\s?(\d+)/) || [])[1];
     const qty = (c.match(/(\d+)\s+(?:x\s+)?[a-z]/i) || [])[1];
