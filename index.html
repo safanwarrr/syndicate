@@ -1,0 +1,566 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Syndicate: AI agents that let small vintage resellers co-buy a wholesale bale, negotiate with the supplier's agent, and split it fairly.">
+<title>Syndicate</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root{
+  --bg:#EEF0F2; --surface:#FFFFFF; --sunk:#E4E8ED; --ink:#141B26; --muted:#5B6576; --line:#D3D9E1;
+  --indigo:#2F4B7C; --indigo-soft:#DDE5F2; --tag:#F3C846; --tag-ink:#3A2E00;
+  --supplier:#8A5215; --supplier-soft:#F5E6D3; --good:#2E7D4F; --good-soft:#DCEFE3; --bad:#B3261E;
+  --display:"Bricolage Grotesque",ui-sans-serif,system-ui,sans-serif;
+  --body:"IBM Plex Sans",ui-sans-serif,system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#0F141C; --surface:#161D28; --sunk:#1D2533; --ink:#E7EBF1; --muted:#97A2B3; --line:#2A3446;
+    --indigo:#9CB8EA; --indigo-soft:#22304A; --tag:#E8BE3C; --tag-ink:#2B2100;
+    --supplier:#DFAE72; --supplier-soft:#35271A; --good:#62CE91; --good-soft:#18332A; --bad:#F07B72;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#0F141C; --surface:#161D28; --sunk:#1D2533; --ink:#E7EBF1; --muted:#97A2B3; --line:#2A3446;
+  --indigo:#9CB8EA; --indigo-soft:#22304A; --tag:#E8BE3C; --tag-ink:#2B2100;
+  --supplier:#DFAE72; --supplier-soft:#35271A; --good:#62CE91; --good-soft:#18332A; --bad:#F07B72;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:15px/1.5 var(--body);padding-inline:16px;padding-block:20px 40px}
+.wrap{max-width:1320px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+h1,h2,h3{font-family:var(--display);margin:0;text-wrap:balance}
+button{font:inherit;cursor:pointer}
+button:focus-visible,textarea:focus-visible{outline:2px solid var(--indigo);outline-offset:2px}
+.mono{font-family:var(--mono)}
+.num{font-variant-numeric:tabular-nums}
+
+/* header */
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:16px}
+.brand{display:flex;flex-direction:column;gap:4px;max-width:720px}
+.brand h1{font-size:clamp(34px,5vw,54px);font-weight:800;letter-spacing:-.02em;line-height:1}
+.brand h1 span{background:var(--tag);color:var(--tag-ink);padding:0 .18em;border-radius:4px}
+.brand p{margin:0;color:var(--muted);font-size:16px;max-width:62ch}
+.actions{display:flex;gap:10px;flex-wrap:wrap}
+.btn{border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:10px 16px;border-radius:8px;font-weight:600}
+.btn.primary{background:var(--indigo);border-color:var(--indigo);color:var(--surface)}
+.btn:disabled{opacity:.5;cursor:default}
+
+/* stepper */
+.steps{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;list-style:none;margin:0;padding:0}
+.steps li{border-top:3px solid var(--line);padding-top:8px;font-size:13px;color:var(--muted)}
+.steps li b{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+.steps li.on{border-color:var(--indigo);color:var(--ink)}
+.steps li.done{border-color:var(--good);color:var(--ink)}
+
+/* grid */
+.grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr) minmax(0,1.15fr);gap:16px;align-items:start}
+@media (max-width:1050px){.grid{grid-template-columns:1fr 1fr}.col-lot{grid-column:1 / -1}}
+@media (max-width:700px){.grid{grid-template-columns:1fr}.steps{grid-template-columns:1fr 1fr}}
+.col{display:flex;flex-direction:column;gap:12px;min-width:0}
+.col-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.col-h h2{font-size:20px;font-weight:600}
+.col-h small{color:var(--muted);font-family:var(--mono);font-size:12px}
+
+/* agent cards */
+.agent{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.agent-top{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.agent-top strong{font-size:15px}
+.agent-top span{color:var(--muted);font-size:12px}
+.brief{margin:0;font-size:13.5px;color:var(--muted);font-style:italic}
+.chips{display:flex;flex-wrap:wrap;gap:5px}
+.chip{font-family:var(--mono);font-size:11.5px;background:var(--sunk);border-radius:4px;padding:2px 6px;white-space:nowrap}
+.chip.b{background:var(--indigo-soft);color:var(--indigo)}
+.agent.new{border-color:var(--indigo)}
+
+.add{background:var(--surface);border:1px dashed var(--line);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.add label{font-weight:600;font-size:14px}
+.add textarea{width:100%;min-height:70px;resize:vertical;font:inherit;font-size:14px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px}
+.add .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.add .note{font-size:12px;color:var(--muted)}
+
+/* deal room */
+.room{background:var(--surface);border:1px solid var(--line);border-radius:10px;display:flex;flex-direction:column;min-height:420px}
+.track{padding:14px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:6px}
+.track-bar{position:relative;height:34px;margin-top:20px;background:var(--sunk);border-radius:6px}
+.mk{position:absolute;top:0;bottom:0;width:3px;border-radius:2px;transition:left .5s ease}
+.mk::after{content:attr(data-l);position:absolute;top:-2px;font-family:var(--mono);font-size:11px;white-space:nowrap;padding:1px 4px;border-radius:3px;transform:translateY(-100%)}
+.mk.s{background:var(--supplier)}.mk.s::after{right:4px;color:var(--supplier)}
+.mk.b{background:var(--indigo)}.mk.b::after{left:4px;color:var(--indigo)}
+.mk.d{background:var(--good);width:5px}.mk.d::after{left:50%;transform:translate(-50%,-100%);color:var(--good);font-weight:600}
+.track-legend{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;color:var(--muted)}
+.feed{list-style:none;margin:0;padding:14px;display:flex;flex-direction:column;gap:10px;max-height:560px;overflow-y:auto}
+.msg{display:flex;flex-direction:column;gap:2px;max-width:88%;animation:in .3s ease both}
+.msg .who{font-family:var(--mono);font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+.msg .txt{padding:8px 11px;border-radius:8px;font-size:14px}
+.msg.sup{align-self:flex-start}.msg.sup .txt{background:var(--supplier-soft)}
+.msg.syn{align-self:flex-end;text-align:right}.msg.syn .txt{background:var(--indigo-soft);text-align:left}
+.msg.sys{align-self:center;max-width:100%;text-align:center}.msg.sys .txt{background:transparent;color:var(--muted);font-size:13px;padding:2px}
+.msg.deal .txt{background:var(--good-soft);color:var(--ink);font-weight:600}
+.msg .price{font-family:var(--mono);font-weight:600}
+@keyframes in{from{opacity:.2;transform:translateY(4px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.msg{animation:none}.mk{transition:none}}
+.empty{color:var(--muted);font-size:14px;padding:18px 14px}
+
+/* lots */
+.lot{background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.lot.pick{border-color:var(--good);box-shadow:0 0 0 1px var(--good)}
+.lot.out{opacity:.62}
+.tag{background:var(--tag);color:var(--tag-ink);padding:10px 14px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-family:var(--mono);font-size:12px}
+.tag strong{font-family:var(--display);font-size:16px;font-weight:600}
+.lot-body{padding:10px 14px;display:flex;flex-direction:column;gap:8px}
+.manifest{width:100%;border-collapse:collapse;font-size:13px}
+.manifest td{padding:3px 0;border-bottom:1px dotted var(--line)}
+.manifest td:last-child{text-align:right;font-family:var(--mono)}
+.verdict{font-size:13px;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.verdict .v{font-weight:600}
+.v.ok{color:var(--good)}.v.no{color:var(--bad)}
+.cov{height:6px;background:var(--sunk);border-radius:3px;overflow:hidden}
+.cov i{display:block;height:100%;background:var(--good)}
+
+/* split */
+.split{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.split h3{font-size:17px;font-weight:600}
+.tbl-wrap{overflow-x:auto}
+.tbl{width:100%;border-collapse:collapse;font-size:13px;min-width:460px}
+.tbl th{text-align:left;font-weight:600;font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:6px 4px;border-bottom:1px solid var(--line)}
+.tbl td{padding:8px 4px;border-bottom:1px solid var(--line);vertical-align:top}
+.tbl td.r,.tbl th.r{text-align:right}
+.tbl .pcs{font-size:12px;color:var(--muted)}
+.save{color:var(--good);font-weight:600}
+.ap{border:1px solid var(--indigo);background:transparent;color:var(--indigo);border-radius:6px;padding:4px 10px;font-weight:600;font-size:12.5px;white-space:nowrap}
+.ok-chip{font-family:var(--mono);font-size:11.5px;color:var(--good);white-space:nowrap}
+.order{border:1px solid var(--good);background:var(--good-soft);border-radius:8px;padding:12px;font-size:14px}
+.order b{font-family:var(--mono)}
+.fine{font-size:12px;color:var(--muted);margin:0}
+.aibadge{align-self:center;font-family:var(--mono);font-size:12px;padding:4px 8px;border-radius:6px;background:var(--sunk);color:var(--muted)}
+.aibadge.on{background:var(--good-soft);color:var(--good)}
+footer{color:var(--muted);font-size:12.5px;border-top:1px solid var(--line);padding-top:12px}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <h1>Syndicate<span>.</span></h1>
+      <p>Small vintage resellers can't afford a 100-piece wholesale bale, and don't want most of it. Their AI agents find each other, pick a bale together, bargain with the supplier's agent, and split it fairly. Every human signs off on their share.</p>
+    </div>
+    <div class="actions">
+      <span class="aibadge" id="aiBadge">checking AI…</span>
+      <button class="btn primary" id="run">Run the syndicate</button>
+      <button class="btn" id="reset">Reset</button>
+    </div>
+  </header>
+
+  <ol class="steps" id="steps">
+    <li data-s="1"><b>1 · Brief</b>Each reseller tells their agent what they want</li>
+    <li data-s="2"><b>2 · Discover</b>Agents score every bale on the market</li>
+    <li data-s="3"><b>3 · Negotiate</b>Syndicate agent vs supplier agent</li>
+    <li data-s="4"><b>4 · Split</b>Pieces and cost shared by value</li>
+    <li data-s="5"><b>5 · Approve</b>Humans sign off before anything is bought</li>
+  </ol>
+
+  <div class="grid">
+    <section class="col">
+      <div class="col-h"><h2>Resellers</h2><small id="agentCount"></small></div>
+      <div id="agents" class="col"></div>
+      <form class="add" id="addForm">
+        <label for="briefIn">Brief a new agent in plain English</label>
+        <textarea id="briefIn">Sofia, Vinted shop. I want Carhartt jackets at up to £35 and fleeces at £15, max 10 pieces, budget £250.</textarea>
+        <div class="row">
+          <button class="btn" type="submit" id="addBtn">Add to syndicate</button>
+          <span class="note" id="addNote"></span>
+        </div>
+      </form>
+    </section>
+
+    <section class="col">
+      <div class="col-h"><h2>Deal room</h2><small id="roomLabel">idle</small></div>
+      <div class="room">
+        <div class="track">
+          <div class="track-bar" id="track"></div>
+          <div class="track-legend"><span id="tMin"></span><span>syndicate offer · supplier ask</span><span id="tMax"></span></div>
+        </div>
+        <ul class="feed" id="feed"><li class="empty">Press <b>Run the syndicate</b>. The agents will scan the bales, form a buying group and negotiate here live.</li></ul>
+      </div>
+    </section>
+
+    <section class="col col-lot">
+      <div class="col-h"><h2>Bales on the market</h2><small>wholesale lots</small></div>
+      <div id="lots" class="col"></div>
+    </section>
+  </div>
+
+  <div id="split" hidden></div>
+
+  <footer>Built for the Grok Bot Commerce London Hackathon, 26 Sept 2026. Prices come from a rules engine that can never exceed a reseller’s mandate; Grok voices the agents and reads the briefs. Suppliers, resellers and prices are fictional sample data. No payment is taken.</footer>
+</div>
+
+<script>
+const CATS = {
+  carhartt:{label:"Carhartt jackets", small:44, kw:/carhartt|chore coat|detroit/i},
+  workwear:{label:"Workwear trousers", small:17, kw:/workwear|dickies|trouser|cargo/i},
+  flannel:{label:"Flannel shirts", small:13, kw:/flannel/i},
+  denimj:{label:"Levi's denim jackets", small:35, kw:/denim|levi/i},
+  fleece:{label:"Fleece & quarter-zips", small:18, kw:/fleece|quarter|zip/i},
+  y2k:{label:"Y2K graphic tees", small:9, kw:/y2k|graphic|tee/i},
+  sport:{label:"90s sportswear jackets", small:26, kw:/sport|track|windbreaker|shell/i},
+  leather:{label:"Leather jackets", small:40, kw:/leather/i}
+};
+
+const LOTS = [
+  {id:"L1", name:"Mixed Workwear Bale", supplier:"Lahore Rag House", grade:"A/B", kg:52, ask:1890, floor:1395,
+   items:{carhartt:14, workwear:26, flannel:34, denimj:10, fleece:16}},
+  {id:"L2", name:"90s Sportswear Box", supplier:"Jebel Ali Reclaim", grade:"A", kg:38, ask:1420, floor:1160,
+   items:{sport:40, fleece:30, y2k:45}},
+  {id:"L3", name:"Leather & Denim Bale", supplier:"Bhiwandi Vintage Mill", grade:"B", kg:60, ask:2150, floor:1780,
+   items:{leather:22, denimj:30, workwear:18}}
+];
+
+const SEED = [
+  {name:"Amara", shop:"Depop", brief:"Carhartt jackets for my Depop. Up to £38 each, max 12. Budget £450.",
+   budget:450, maxPieces:12, autoApprove:0, wants:{carhartt:{wtp:38,max:12}}},
+  {name:"Jonah", shop:"Brick Lane stall", brief:"20 flannels at up to £11 and 16 fleeces at up to £14. Budget £460. Auto-approve anything under £450.",
+   budget:460, maxPieces:36, autoApprove:450, wants:{flannel:{wtp:11,max:20}, fleece:{wtp:14,max:16}}},
+  {name:"Priya", shop:"Vinted denim shop", brief:"Levi's denim jackets only, up to £30 each, max 10. Plus 6 workwear trousers at £12. Budget £400.",
+   budget:400, maxPieces:16, autoApprove:0, wants:{denimj:{wtp:30,max:10}, workwear:{wtp:12,max:6}}},
+  {name:"Tom", shop:"Instagram drops", brief:"Workwear trousers, £13 each, max 20. Budget £280. Auto-approve under £250.",
+   budget:280, maxPieces:20, autoApprove:250, wants:{workwear:{wtp:13,max:20}}},
+  {name:"Zee", shop:"Pop-up rails", brief:"Anything to fill rails cheap: flannels at £9, denim jackets at £22. Max 25 pieces, budget £300.",
+   budget:300, maxPieces:25, autoApprove:0, wants:{flannel:{wtp:9,max:25}, denimj:{wtp:22,max:25}}}
+];
+
+let agents = [], running = false, timers = [], state = {};
+const $ = s => document.querySelector(s);
+const gbp = n => "£" + Math.round(n).toLocaleString("en-GB");
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const sleep = ms => new Promise(r => { const t = setTimeout(r, ms); timers.push(t); });
+
+function reset(){
+  timers.forEach(clearTimeout); timers = []; running = false;
+  agents = SEED.map((a,i) => ({...a, id:"a"+i, wants:JSON.parse(JSON.stringify(a.wants))}));
+  state = {};
+  $("#feed").innerHTML = '<li class="empty">Press <b>Run the syndicate</b>. The agents will scan the bales, form a buying group and negotiate here live.</li>';
+  $("#track").innerHTML = ""; $("#tMin").textContent = ""; $("#tMax").textContent = "";
+  $("#roomLabel").textContent = "idle";
+  $("#split").hidden = true; $("#split").innerHTML = "";
+  $("#run").disabled = false;
+  setStep(1, false);
+  renderAgents(); renderLots();
+}
+
+function setStep(n, doneUpTo = true){
+  document.querySelectorAll("#steps li").forEach(li => {
+    const s = +li.dataset.s;
+    li.className = s < n && doneUpTo ? "done" : s === n ? "on" : "";
+  });
+}
+
+function renderAgents(highlightId){
+  $("#agentCount").textContent = agents.length + " agents";
+  $("#agents").innerHTML = agents.map(a => `
+    <article class="agent${a.id === highlightId ? " new" : ""}">
+      <div class="agent-top"><strong>${esc(a.name)}'s agent</strong><span>${esc(a.shop)}</span></div>
+      <p class="brief">"${esc(a.brief)}"</p>
+      <div class="chips">
+        ${Object.entries(a.wants).map(([c,w]) => `<span class="chip">${esc(CATS[c].label)} ≤${gbp(w.wtp)} ×${w.max}</span>`).join("")}
+        <span class="chip b">budget ${gbp(a.budget)}</span>
+        ${a.autoApprove ? `<span class="chip b">auto-approve &lt;${gbp(a.autoApprove)}</span>` : `<span class="chip b">asks before buying</span>`}
+      </div>
+    </article>`).join("");
+}
+
+function allocate(lot){
+  const alloc = {}, cap = {};
+  agents.forEach(a => { alloc[a.id] = {}; cap[a.id] = a.maxPieces; });
+  const left = {};
+  for (const [cat, avail] of Object.entries(lot.items)){
+    let rem = avail;
+    const bidders = agents.filter(a => a.wants[cat]).sort((x,y) => y.wants[cat].wtp - x.wants[cat].wtp);
+    for (const a of bidders){
+      if (!rem) break;
+      const n = Math.min(rem, a.wants[cat].max, cap[a.id]);
+      if (n > 0){ alloc[a.id][cat] = n; cap[a.id] -= n; rem -= n; }
+    }
+    if (rem) left[cat] = rem;
+  }
+  const value = {}; let total = 0, placed = 0;
+  agents.forEach(a => {
+    value[a.id] = Object.entries(alloc[a.id]).reduce((s,[c,n]) => s + n * a.wants[c].wtp, 0);
+    total += value[a.id];
+    placed += Object.values(alloc[a.id]).reduce((s,n) => s+n, 0);
+  });
+  const pieces = Object.values(lot.items).reduce((s,n) => s+n, 0);
+  const members = agents.filter(a => value[a.id] > 0);
+  return {alloc, value, total, placed, pieces, left, members, coverage: placed / pieces};
+}
+
+function renderLots(){
+  $("#lots").innerHTML = LOTS.map(l => {
+    const pcs = Object.values(l.items).reduce((s,n) => s+n, 0);
+    const sc = state.scores && state.scores[l.id];
+    const cls = state.pick ? (state.pick === l.id ? " pick" : " out") : "";
+    let verdict = "";
+    if (sc){
+      verdict = `<div class="cov"><i style="width:${Math.round(sc.coverage*100)}%"></i></div>
+      <div class="verdict"><span>${sc.placed}/${sc.pieces} pieces wanted · group value ${gbp(sc.total)}</span>
+      <span class="v ${sc.ok ? "ok" : "no"}">${sc.ok ? "Viable" : esc(sc.why)}</span></div>`;
+    }
+    return `<article class="lot${cls}">
+      <div class="tag"><strong>${esc(l.name)}</strong><span>${esc(l.supplier)} · Grade ${l.grade} · ${l.kg} kg · ${pcs} pcs</span></div>
+      <div class="lot-body">
+        <table class="manifest">${Object.entries(l.items).map(([c,n]) => `<tr><td>${esc(CATS[c].label)}</td><td>${n} pcs</td></tr>`).join("")}
+        <tr><td><b>Supplier asking</b></td><td><b>${gbp(l.ask)}</b></td></tr></table>
+        ${verdict}
+      </div></article>`;
+  }).join("");
+}
+
+function say(kind, who, html){
+  const feed = $("#feed");
+  if (feed.querySelector(".empty")) feed.innerHTML = "";
+  const li = document.createElement("li");
+  li.className = "msg " + kind;
+  li.innerHTML = (who ? `<span class="who">${esc(who)}</span>` : "") + `<span class="txt">${html}</span>`;
+  feed.appendChild(li);
+  feed.scrollTop = feed.scrollHeight;
+}
+const P = n => `<span class="price">${gbp(n)}</span>`;
+
+function drawTrack(lo, hi, s, b, deal){
+  const pos = v => Math.max(0, Math.min(100, (v - lo) / (hi - lo) * 100));
+  $("#tMin").textContent = gbp(lo); $("#tMax").textContent = gbp(hi);
+  $("#track").innerHTML =
+    (s != null ? `<span class="mk s" style="left:calc(${pos(s)}% - 1px)" data-l="ask ${gbp(s)}"></span>` : "") +
+    (b != null ? `<span class="mk b" style="left:calc(${pos(b)}% - 1px)" data-l="offer ${gbp(b)}"></span>` : "") +
+    (deal != null ? `<span class="mk d" style="left:calc(${pos(deal)}% - 2px)" data-l="deal ${gbp(deal)}"></span>` : "");
+}
+
+const r5 = n => Math.round(n / 5) * 5;
+
+async function run(){
+  if (running) return;
+  running = true; $("#run").disabled = true;
+  $("#feed").innerHTML = ""; $("#split").hidden = true;
+  state = {};
+
+  // 1 brief
+  setStep(1); $("#roomLabel").textContent = "briefing";
+  say("sys", "", `${agents.length} reseller agents online. Each holds a private mandate: what to buy, max price per piece, budget.`);
+  await sleep(900);
+
+  // 2 discover
+  setStep(2); $("#roomLabel").textContent = "scanning bales";
+  state.scores = {};
+  for (const l of LOTS){
+    const sc = allocate(l);
+    sc.ok = sc.coverage >= 0.85 && sc.total >= l.floor * 0.9 && sc.members.length >= 2;
+    sc.why = sc.coverage < 0.85 ? `Only ${Math.round(sc.coverage*100)}% wanted` : sc.total < l.floor * 0.9 ? "Group can't afford it" : "Too few buyers";
+    state.scores[l.id] = sc;
+    renderLots();
+    say("sys", "", `Scanned <b>${esc(l.name)}</b>: ${sc.placed} of ${sc.pieces} pieces match someone's mandate (${Math.round(sc.coverage*100)}%).`);
+    await sleep(800);
+  }
+  const viable = LOTS.filter(l => state.scores[l.id].ok).sort((a,b) => state.scores[b.id].total / b.ask - state.scores[a.id].total / a.ask);
+  if (!viable.length){
+    say("sys", "", "No bale fits this group well enough. Add more resellers or loosen a mandate, then run again.");
+    running = false; $("#run").disabled = false; return;
+  }
+  const lot = viable[0], sc = state.scores[lot.id];
+  state.hist = [];
+  state.ctx = `${lot.name} from ${lot.supplier}: ${sc.pieces} pieces, Grade ${lot.grade}, ${lot.kg} kg, list price ${gbp(lot.ask)}. Contents: ${Object.entries(lot.items).map(([c,n]) => n + " " + CATS[c].label).join(", ")}. Buyer syndicate: ${sc.members.length} small resellers who between them want ${sc.placed} of the ${sc.pieces} pieces.`;
+  state.pick = lot.id; renderLots();
+  const names = sc.members.map(a => a.name);
+  say("sys", "", `Syndicate formed: <b>${esc(names.join(", "))}</b> will co-buy <b>${esc(lot.name)}</b>. Combined walk-away price ${P(sc.total)}. The supplier never sees it.`);
+  await sleep(1100);
+
+  // 3 negotiate
+  setStep(3); $("#roomLabel").textContent = "negotiating";
+  const reserve = sc.total, open = r5(reserve * 0.7);
+  const lo = r5(open * 0.95), hi = r5(lot.ask * 1.03);
+  const T_S = 7, T_B = 8;
+  const S = t => r5(lot.ask - (lot.ask - lot.floor) * Math.pow(t / T_S, 2));
+  const B = t => r5(open + (reserve - open) * (t / T_B));
+  const leftTxt = Object.entries(sc.left).map(([c,n]) => `${n} ${CATS[c].label}`).join(", ");
+  const synLines = [
+    b => `We're ${sc.members.length} resellers buying together. ${sc.placed} of ${sc.pieces} pieces already have a home. We can do ${P(b)}.`,
+    b => `We pay within 24 hours and collect the whole bale in one shipment. ${P(b)}.`,
+    b => leftTxt ? `${esc(leftTxt)} have no buyer in our group. We'll still take the full bale so you don't have to re-sort. ${P(b)}.` : `One order, one invoice, no re-sorting for you. ${P(b)}.`,
+    b => `Grade B pieces resell for less, and ours will be listed within a week. Moving to ${P(b)}.`,
+    b => `If this goes well the same group reorders monthly. ${P(b)}.`,
+    b => `We're close to our limit. ${P(b)}.`,
+    b => `${P(b)} is as high as this group can go.`,
+    b => `${P(b)}, final.`
+  ];
+  const supLines = [
+    s => `${esc(lot.name)}, ${sc.pieces} pieces, Grade ${lot.grade}, ${lot.kg} kg. Asking ${P(s)}.`,
+    s => `The Carhartt and denim in this bale are strong sellers. I can move to ${P(s)}.`,
+    s => `A full-bale collection helps us. ${P(s)}.`,
+    s => `Repeat business is interesting. ${P(s)}.`,
+    s => `I have other buyers for this bale. ${P(s)}.`,
+    s => `This is below what we usually take. ${P(s)}.`,
+    s => `Last offer from our side: ${P(s)}.`
+  ];
+  let deal = null, s = lot.ask, b = null;
+  await speak("sup", lot.supplier + " · supplier agent", supLines[0](s), s);
+  drawTrack(lo, hi, s, null);
+  await sleep(1100);
+  for (let t = 1; t <= T_B; t++){
+    b = B(t);
+    if (b >= s){ deal = s; say("syn", "Syndicate agent", `That's inside our limit. We accept ${P(s)}.`); drawTrack(lo, hi, s, s); await sleep(900); break; }
+    await speak("syn", "Syndicate agent", synLines[Math.min(t-1, synLines.length-1)](b), b);
+    drawTrack(lo, hi, s, b);
+    await sleep(1100);
+    s = S(Math.min(t, T_S));
+    if (s <= b){ deal = b; say("sup", lot.supplier + " · supplier agent", `Agreed. We accept ${P(b)} for the full bale.`); drawTrack(lo, hi, b, b); await sleep(900); break; }
+    await speak("sup", lot.supplier + " · supplier agent", supLines[Math.min(t, supLines.length-1)](s), s);
+    drawTrack(lo, hi, s, b);
+    await sleep(1100);
+  }
+  if (deal == null){
+    say("sys", "", "No deal. The supplier's floor is above what the group will pay, so the agents walk away and no one is charged.");
+    running = false; $("#run").disabled = false; return;
+  }
+  deal = Math.max(deal, lot.floor);
+  say("deal", "Agreed", `Deal at ${P(deal)}, down from ${P(lot.ask)} (${Math.round((1 - deal / lot.ask) * 100)}% off the asking price).`);
+  drawTrack(lo, hi, null, null, deal);
+  $("#roomLabel").textContent = "deal agreed";
+  await sleep(900);
+
+  // 4 split
+  setStep(4);
+  state.deal = deal; state.lot = lot; state.sc = sc;
+  state.rows = sc.members.map(a => {
+    const share = deal * sc.value[a.id] / sc.total;
+    const smallLot = Object.entries(sc.alloc[a.id]).reduce((s,[c,n]) => s + n * CATS[c].small, 0);
+    const pcs = Object.values(sc.alloc[a.id]).reduce((s,n) => s+n, 0);
+    const over = share > a.budget;
+    const auto = !over && a.autoApprove && share < a.autoApprove;
+    return {a, share, smallLot, pcs, over, approved: !!auto, auto: !!auto};
+  });
+  say("sys", "", `Cost split in proportion to what each piece is worth to each buyer, so everyone pays the same percentage below their own max price. Waiting for human sign-off.`);
+  renderSplit();
+  $("#split").scrollIntoView({behavior:"smooth", block:"start"});
+  setStep(5);
+  $("#roomLabel").textContent = "awaiting approval";
+  running = false;
+}
+
+function renderSplit(){
+  const {deal, lot, sc, rows} = state;
+  const allOk = rows.every(r => r.approved);
+  const totalSmall = rows.reduce((s,r) => s + r.smallLot, 0);
+  const el = $("#split");
+  el.hidden = false;
+  el.innerHTML = `<div class="split">
+    <h3>The split · ${esc(lot.name)} for ${gbp(deal)}</h3>
+    <div class="tbl-wrap"><table class="tbl num">
+      <thead><tr><th>Reseller</th><th class="r">Pays</th><th class="r">Buying alone</th><th class="r">Saves</th><th class="r">Sign-off</th></tr></thead>
+      <tbody>${rows.map((r,i) => `<tr>
+        <td><b>${esc(r.a.name)}</b><div class="pcs">${Object.entries(sc.alloc[r.a.id]).map(([c,n]) => `${n} × ${esc(CATS[c].label)}`).join(", ")}</div></td>
+        <td class="r mono">${gbp(r.share)}</td>
+        <td class="r mono">${gbp(r.smallLot)}</td>
+        <td class="r save">${Math.round((1 - r.share / r.smallLot) * 100)}%</td>
+        <td class="r">${r.approved ? `<span class="ok-chip">${r.auto ? "✓ auto (under limit)" : "✓ approved"}</span>` : `<button class="ap" data-i="${i}" type="button">${r.over ? "Over budget: approve" : "Approve"} ${gbp(r.share)}</button>`}</td>
+      </tr>`).join("")}</tbody>
+    </table></div>
+    <p class="fine">"Buying alone" means buying the same pieces in small 10-piece boxes, at typical per-piece prices. ${Object.keys(sc.left).length ? `Unclaimed pieces (${Object.entries(sc.left).map(([c,n]) => n + " " + CATS[c].label).join(", ")}) ride along at no charge and go to the group's resale pool.` : ""}</p>
+    ${allOk ? `<div class="order">Every member approved. Order <b>SYN-0926-${String(deal).slice(-3)}</b> placed with ${esc(lot.supplier)}: one shipment, split on arrival. The group saved <b>${gbp(totalSmall - deal)}</b> in total. <span class="fine">(Simulated: no payment taken.)</span></div>` : `<p class="fine">Nothing is bought until every human approves their own share.</p>`}
+  </div>`;
+  el.querySelectorAll(".ap").forEach(btn => btn.onclick = () => {
+    const r = rows[+btn.dataset.i]; r.approved = true;
+    say("syn", r.a.name, `Approved my share: ${P(r.share)}.`);
+    renderSplit();
+    if (rows.every(x => x.approved)){ setStep(6); $("#roomLabel").textContent = "order placed"; say("deal", "Syndicate", `All ${rows.length} members approved. Order placed.`); }
+  });
+}
+
+/* ---------- briefing a new agent ---------- */
+function parseBriefLocally(text){
+  const wants = {};
+  const clauses = text.split(/[.;]|,\s(?=and\s)|\band\b/i);
+  for (const c of clauses){
+    const price = (c.match(/£\s?(\d+)/) || [])[1];
+    const qty = (c.match(/(\d+)\s+(?:x\s+)?[a-z]/i) || [])[1];
+    for (const [k,cat] of Object.entries(CATS)){
+      if (cat.kw.test(c) && price && !/budget/i.test(c)) wants[k] = {wtp:+price, max: qty && +qty < 200 ? +qty : 15};
+    }
+  }
+  const budget = +((text.match(/budget\D{0,6}(\d+)/i) || [])[1] || 300);
+  const maxPieces = +((text.match(/max(?:imum)?\s+(\d+)\s+pieces/i) || [])[1] || 30);
+  const auto = +((text.match(/auto-?approve[^£\d]*£?\s?(\d+)/i) || [])[1] || 0);
+  const name = (text.match(/^\s*([A-Z][a-z]+)/) || [])[1] || "New reseller";
+  const shop = (text.match(/\b(Depop|Vinted|eBay|Etsy|Instagram|stall|market|shop)\b/i) || [])[0] || "Reseller";
+  for (const w of Object.values(wants)) w.max = Math.min(w.max, maxPieces);
+  return {name, shop, budget, maxPieces, autoApprove:auto, wants};
+}
+
+let AI = false;
+(async () => {
+  try {
+    const r = await fetch("/api/health"); const d = await r.json(); AI = !!d.ai;
+    $("#aiBadge").textContent = AI ? "Grok live · " + d.model : "offline mode (scripted)";
+  } catch(e){ AI = false; $("#aiBadge").textContent = "offline mode (scripted)"; }
+  $("#aiBadge").classList.toggle("on", AI);
+  $("#addNote").textContent = AI ? "Briefs are read by Grok" : "Briefs are read by the built-in parser";
+})();
+
+const fmt = t => esc(t).replace(/£[\d,]+/g, m => `<span class="price">${m}</span>`);
+async function speak(kind, who, html, price){
+  const draft = html.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&");
+  let out = html;
+  if (AI){
+    try {
+      const r = await fetch("/api/line", {method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({role:kind, price:gbp(price), draft, context:state.ctx || "", history:state.hist || []})});
+      const d = await r.json();
+      if (d.ok) out = fmt(d.text);
+    } catch(e){ /* keep scripted line */ }
+  }
+  (state.hist = state.hist || []).push((kind === "sup" ? "Supplier: " : "Syndicate: ") + out.replace(/<[^>]+>/g, ""));
+  say(kind, who, out);
+}
+
+async function parseBrief(text){
+  if (AI){
+    try {
+      const cats = Object.fromEntries(Object.entries(CATS).map(([k,c]) => [k, c.label]));
+      const r = await fetch("/api/brief", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({text, cats})});
+      const d = await r.json(); const out = d.ok && d.mandate;
+      if (out && out.wants && Object.keys(out.wants).length){
+        const wants = {};
+        for (const [k,w] of Object.entries(out.wants)) if (CATS[k] && +w.wtp > 0) wants[k] = {wtp:+w.wtp, max:Math.max(1, +w.max || +out.maxPieces || 10)};
+        if (Object.keys(wants).length) return {name:String(out.name||"New reseller").slice(0,30), shop:String(out.shop||"Reseller").slice(0,30), budget:+out.budget||300, maxPieces:+out.maxPieces||30, autoApprove:+out.autoApprove||0, wants, by:"Grok"};
+      }
+    } catch(e){ /* fall back */ }
+  }
+  return {...parseBriefLocally(text), by:"parser"};
+}
+
+$("#addForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const text = $("#briefIn").value.trim();
+  if (!text || running) return;
+  $("#addBtn").disabled = true; $("#addNote").textContent = "Reading the brief…";
+  const m = await parseBrief(text);
+  $("#addBtn").disabled = false;
+  if (!Object.keys(m.wants).length){ $("#addNote").textContent = "Couldn't find an item and a price per piece. Try e.g. \"flannels at £10\"."; return; }
+  const id = "a" + Date.now();
+  agents.push({...m, id, brief:text});
+  $("#addNote").textContent = `${m.name}'s agent added (read by ${m.by === "Grok" ? "Grok" : "the built-in parser"}). Run the syndicate again.`;
+  state = {}; $("#split").hidden = true; renderLots();
+  renderAgents(id);
+});
+
+$("#run").onclick = run;
+$("#reset").onclick = reset;
+reset();
+</script>
+</body>
+</html>
