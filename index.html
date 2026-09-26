@@ -133,6 +133,12 @@ header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-be
 .tbl td.r,.tbl th.r{text-align:right}
 .tbl .pcs{font-size:12px;color:var(--muted)}
 .save{color:var(--good);font-weight:600}
+.save.neg{color:var(--bad)}
+.rm{border:0;background:transparent;color:var(--muted);font-size:12px;padding:0;text-decoration:underline}
+.emptybox{background:var(--surface);border:1px dashed var(--line);border-radius:10px;padding:14px;font-size:14px;color:var(--muted);display:flex;flex-direction:column;gap:10px;align-items:flex-start}
+.ex{display:flex;flex-wrap:wrap;gap:6px}
+.ex button{font-size:12px;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:999px;padding:3px 10px}
+.hint{font-size:12.5px;color:var(--muted);align-self:center}
 .ap{border:1px solid var(--indigo);background:transparent;color:var(--indigo);border-radius:6px;padding:4px 10px;font-weight:600;font-size:12.5px;white-space:nowrap}
 .ok-chip{font-family:var(--mono);font-size:11.5px;color:var(--good);white-space:nowrap}
 .order{border:1px solid var(--good);background:var(--good-soft);border-radius:8px;padding:12px;font-size:14px}
@@ -153,6 +159,7 @@ footer{color:var(--muted);font-size:12.5px;border-top:1px solid var(--line);padd
     </div>
     <div class="actions">
       <span class="aibadge" id="aiBadge">checking AI…</span>
+      <span class="hint" id="runHint"></span>
       <button class="btn primary" id="run">Run the syndicate</button>
       <button class="btn" id="reset">Reset</button>
     </div>
@@ -172,7 +179,8 @@ footer{color:var(--muted);font-size:12.5px;border-top:1px solid var(--line);padd
       <div id="agents" class="col"></div>
       <form class="add" id="addForm">
         <label for="briefIn">Brief a new agent in plain English</label>
-        <textarea id="briefIn">Sofia, Vinted shop. I want Carhartt jackets at up to £35 and fleeces at £15, max 10 pieces, budget £250.</textarea>
+        <textarea id="briefIn" placeholder="e.g. Sofia, Vinted shop. Carhartt jackets at up to £35 and fleeces at £15, max 10 pieces, budget £250."></textarea>
+        <div class="ex" id="examples"></div>
         <div class="row">
           <button class="btn" type="submit" id="addBtn">Add to syndicate</button>
           <span class="note" id="addNote"></span>
@@ -244,15 +252,42 @@ const sleep = ms => new Promise(r => { const t = setTimeout(r, ms); timers.push(
 
 function reset(){
   timers.forEach(clearTimeout); timers = []; running = false;
-  agents = SEED.map((a,i) => ({...a, id:"a"+i, wants:JSON.parse(JSON.stringify(a.wants))}));
+  agents = [];
   state = {};
   $("#feed").innerHTML = '<li class="empty">Press <b>Run the syndicate</b>. The agents will scan the bales, form a buying group and negotiate here live.</li>';
   $("#track").innerHTML = ""; $("#tMin").textContent = ""; $("#tMax").textContent = "";
   $("#roomLabel").textContent = "idle";
   $("#split").hidden = true; $("#split").innerHTML = "";
-  $("#run").disabled = false;
   setStep(1, false);
-  renderAgents(); renderLots();
+  refresh();
+}
+
+function loadExamples(){
+  if (running) return;
+  const have = new Set(agents.map(a => a.name));
+  SEED.forEach((a,i) => { if (!have.has(a.name)) agents.push({...a, id:"s"+i+Date.now(), wants:JSON.parse(JSON.stringify(a.wants))}); });
+  state = {}; $("#split").hidden = true;
+  refresh();
+}
+
+function scoreAll(){
+  const scores = {};
+  for (const l of LOTS){
+    const sc = allocate(l);
+    sc.ok = sc.members.length >= 2 && sc.total >= l.floor;
+    sc.why = sc.members.length < 2 ? "Needs 2+ buyers" : "Not enough demand yet";
+    scores[l.id] = sc;
+  }
+  return scores;
+}
+
+// Re-render everything after the group changes. Bales show live demand as agents join.
+function refresh(highlightId){
+  if (!running && !state.pick) state.scores = agents.length ? scoreAll() : null;
+  renderAgents(highlightId); renderLots();
+  const n = agents.length;
+  $("#run").disabled = running || n < 2;
+  $("#runHint").textContent = n < 2 ? `Add ${2 - n} more reseller${n === 1 ? "" : "s"} to run` : "";
 }
 
 function setStep(n, doneUpTo = true){
@@ -263,10 +298,16 @@ function setStep(n, doneUpTo = true){
 }
 
 function renderAgents(highlightId){
-  $("#agentCount").textContent = agents.length + " agents";
+  $("#agentCount").textContent = agents.length + (agents.length === 1 ? " agent" : " agents");
+  if (!agents.length){
+    $("#agents").innerHTML = `<div class="emptybox"><span>No resellers yet. Brief an agent below, one per reseller. Each agent keeps its owner's limits private.</span>
+      <button class="btn" type="button" id="loadEx">Load example group (5 resellers)</button></div>`;
+    $("#loadEx").onclick = loadExamples;
+    return;
+  }
   $("#agents").innerHTML = agents.map(a => `
     <article class="agent${a.id === highlightId ? " new" : ""}">
-      <div class="agent-top"><strong>${esc(a.name)}'s agent</strong><span>${esc(a.shop)}</span></div>
+      <div class="agent-top"><strong>${esc(a.name)}'s agent</strong><span>${esc(a.shop)} · <button class="rm" type="button" data-id="${a.id}">remove</button></span></div>
       <p class="brief">"${esc(a.brief)}"</p>
       <div class="chips">
         ${Object.entries(a.wants).map(([c,w]) => `<span class="chip">${esc(CATS[c].label)} ≤${gbp(w.wtp)} ×${w.max}</span>`).join("")}
@@ -274,6 +315,11 @@ function renderAgents(highlightId){
         ${a.autoApprove ? `<span class="chip b">auto-approve &lt;${gbp(a.autoApprove)}</span>` : `<span class="chip b">asks before buying</span>`}
       </div>
     </article>`).join("");
+  $("#agents").querySelectorAll(".rm").forEach(b => b.onclick = () => {
+    if (running) return;
+    agents = agents.filter(a => a.id !== b.dataset.id);
+    state = {}; $("#split").hidden = true; refresh();
+  });
 }
 
 function allocate(lot){
@@ -308,8 +354,8 @@ function renderLots(){
     const cls = state.pick ? (state.pick === l.id ? " pick" : " out") : "";
     let verdict = "";
     if (sc){
-      verdict = `<div class="cov"><i style="width:${Math.round(sc.coverage*100)}%"></i></div>
-      <div class="verdict"><span>${sc.placed}/${sc.pieces} pieces wanted · group value ${gbp(sc.total)}</span>
+      verdict = `<div class="cov" title="Group demand vs asking price"><i style="width:${Math.min(100, Math.round(sc.total / l.ask * 100))}%"></i></div>
+      <div class="verdict"><span>${sc.placed}/${sc.pieces} pieces wanted · group would pay up to ${gbp(sc.total)}</span>
       <span class="v ${sc.ok ? "ok" : "no"}">${sc.ok ? "Viable" : esc(sc.why)}</span></div>`;
     }
     return `<article class="lot${cls}">
@@ -359,9 +405,7 @@ async function run(){
   setStep(2); $("#roomLabel").textContent = "scanning bales";
   state.scores = {};
   for (const l of LOTS){
-    const sc = allocate(l);
-    sc.ok = sc.coverage >= 0.85 && sc.total >= l.floor * 0.9 && sc.members.length >= 2;
-    sc.why = sc.coverage < 0.85 ? `Only ${Math.round(sc.coverage*100)}% wanted` : sc.total < l.floor * 0.9 ? "Group can't afford it" : "Too few buyers";
+    const sc = scoreAll()[l.id];
     state.scores[l.id] = sc;
     renderLots();
     say("sys", "", `Scanned <b>${esc(l.name)}</b>: ${sc.placed} of ${sc.pieces} pieces match someone's mandate (${Math.round(sc.coverage*100)}%).`);
@@ -369,8 +413,8 @@ async function run(){
   }
   const viable = LOTS.filter(l => state.scores[l.id].ok).sort((a,b) => state.scores[b.id].total / b.ask - state.scores[a.id].total / a.ask);
   if (!viable.length){
-    say("sys", "", "No bale fits this group well enough. Add more resellers or loosen a mandate, then run again.");
-    running = false; $("#run").disabled = false; return;
+    say("sys", "", "Not enough combined demand for any bale yet. Add more resellers or raise some price limits, then run again. Nobody is charged.");
+    running = false; refresh(); return;
   }
   const lot = viable[0], sc = state.scores[lot.id];
   state.hist = [];
@@ -425,7 +469,7 @@ async function run(){
   }
   if (deal == null){
     say("sys", "", "No deal. The supplier's floor is above what the group will pay, so the agents walk away and no one is charged.");
-    running = false; $("#run").disabled = false; return;
+    running = false; refresh(); return;
   }
   deal = Math.max(deal, lot.floor);
   say("deal", "Agreed", `Deal at ${P(deal)}, down from ${P(lot.ask)} (${Math.round((1 - deal / lot.ask) * 100)}% off the asking price).`);
@@ -466,7 +510,7 @@ function renderSplit(){
         <td><b>${esc(r.a.name)}</b><div class="pcs">${Object.entries(sc.alloc[r.a.id]).map(([c,n]) => `${n} × ${esc(CATS[c].label)}`).join(", ")}</div></td>
         <td class="r mono">${gbp(r.share)}</td>
         <td class="r mono">${gbp(r.smallLot)}</td>
-        <td class="r save">${Math.round((1 - r.share / r.smallLot) * 100)}%</td>
+        <td class="r save${r.share > r.smallLot ? " neg" : ""}">${Math.round((1 - r.share / r.smallLot) * 100)}%</td>
         <td class="r">${r.approved ? `<span class="ok-chip">${r.auto ? "✓ auto (under limit)" : "✓ approved"}</span>` : `<button class="ap" data-i="${i}" type="button">${r.over ? "Over budget: approve" : "Approve"} ${gbp(r.share)}</button>`}</td>
       </tr>`).join("")}</tbody>
     </table></div>
@@ -553,10 +597,21 @@ $("#addForm").addEventListener("submit", async e => {
   if (!Object.keys(m.wants).length){ $("#addNote").textContent = "Couldn't find an item and a price per piece. Try e.g. \"flannels at £10\"."; return; }
   const id = "a" + Date.now();
   agents.push({...m, id, brief:text});
-  $("#addNote").textContent = `${m.name}'s agent added (read by ${m.by === "Grok" ? "Grok" : "the built-in parser"}). Run the syndicate again.`;
-  state = {}; $("#split").hidden = true; renderLots();
-  renderAgents(id);
+  $("#addNote").textContent = `${m.name}'s agent added (read by ${m.by === "Grok" ? "Grok" : "the built-in parser"}).`;
+  $("#briefIn").value = "";
+  state = {}; $("#split").hidden = true;
+  refresh(id);
 });
+
+const EXAMPLES = [
+  "Amara, Depop. Carhartt jackets up to £38 each, max 12. Budget £450.",
+  "Jonah, Brick Lane stall. 20 flannels at up to £11 and 16 fleeces at up to £14. Budget £460. Auto-approve under £450.",
+  "Priya, Vinted. Levi's denim jackets up to £30, max 10, and 6 workwear trousers at £12. Budget £400.",
+  "Tom, Instagram. Workwear trousers at £13 each, max 20. Budget £280.",
+  "Kai, eBay. 20 90s sportswear jackets at £22 and Y2K tees at £7, max 40 pieces. Budget £600."
+];
+$("#examples").innerHTML = '<span class="note">Try:</span>' + EXAMPLES.map((t,i) => `<button type="button" data-i="${i}">${esc(t.split(",")[0])}</button>`).join("");
+$("#examples").querySelectorAll("button").forEach(b => b.onclick = () => { $("#briefIn").value = EXAMPLES[+b.dataset.i]; $("#briefIn").focus(); });
 
 $("#run").onclick = run;
 $("#reset").onclick = reset;
