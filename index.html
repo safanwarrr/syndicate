@@ -323,16 +323,16 @@ function renderAgents(highlightId){
 }
 
 function allocate(lot){
-  const alloc = {}, cap = {};
-  agents.forEach(a => { alloc[a.id] = {}; cap[a.id] = a.maxPieces; });
+  const alloc = {}, cap = {}, cash = {};
+  agents.forEach(a => { alloc[a.id] = {}; cap[a.id] = a.maxPieces; cash[a.id] = a.budget; });
   const left = {};
   for (const [cat, avail] of Object.entries(lot.items)){
     let rem = avail;
     const bidders = agents.filter(a => a.wants[cat]).sort((x,y) => y.wants[cat].wtp - x.wants[cat].wtp);
     for (const a of bidders){
       if (!rem) break;
-      const n = Math.min(rem, a.wants[cat].max, cap[a.id]);
-      if (n > 0){ alloc[a.id][cat] = n; cap[a.id] -= n; rem -= n; }
+      const n = Math.min(rem, a.wants[cat].max, cap[a.id], Math.floor(cash[a.id] / a.wants[cat].wtp));
+      if (n > 0){ alloc[a.id][cat] = n; cap[a.id] -= n; cash[a.id] -= n * a.wants[cat].wtp; rem -= n; }
     }
     if (rem) left[cat] = rem;
   }
@@ -529,15 +529,24 @@ function renderSplit(){
 function parseBriefLocally(text){
   const wants = {};
   const clauses = text.replace(/(?:max(?:imum)?\s+)?budget\D{0,6}\d+/gi, "").replace(/auto-?approve[^£\d]*£?\s?\d+/gi, "").split(/[.;,]|\band\b/i);
+  let last = null;
   for (const c of clauses){
     const price = (c.match(/£\s?(\d+)/) || [])[1];
-    const qty = (c.match(/(\d+)\s+(?:x\s+)?[a-z]/i) || [])[1];
+    const qty = (c.match(/(?<![£\d])(\d+)\s+(?:x\s+)?(?=\d*[a-z])/i) || [])[1];
+    const perItemMax = (c.match(/max(?:imum)?\s+(\d+)\b(?!\s*pieces)/i) || [])[1];
+    let found = false;
     for (const [k,cat] of Object.entries(CATS)){
-      if (cat.kw.test(c) && price && !/budget/i.test(c)) wants[k] = {wtp:+price, max: qty && +qty < 200 ? +qty : 15};
+      if (cat.kw.test(c) && price){
+        wants[k] = {wtp:+price, max: perItemMax ? +perItemMax : qty && +qty < 200 ? +qty : 15};
+        last = wants[k]; found = true;
+      }
     }
+    // "…jackets at £38, max 12" — a bare "max N" applies to the item just before it
+    if (!found && last && perItemMax) last.max = +perItemMax;
   }
   const budget = +((text.match(/budget\D{0,6}(\d+)/i) || [])[1] || 300);
-  const maxPieces = +((text.match(/max(?:imum)?\s+(\d+)\s+pieces/i) || [])[1] || 30);
+  const explicitMax = +((text.match(/max(?:imum)?\s+(\d+)\s+pieces/i) || [])[1] || 0);
+  const maxPieces = explicitMax || Object.values(wants).reduce((s,w) => s + w.max, 0) || 30;
   const auto = +((text.match(/auto-?approve[^£\d]*£?\s?(\d+)/i) || [])[1] || 0);
   const name = (text.match(/^\s*([A-Z][a-z]+)/) || [])[1] || "New reseller";
   const shop = (text.match(/\b(Depop|Vinted|eBay|Etsy|Instagram|stall|market|shop)\b/i) || [])[0] || "Reseller";
