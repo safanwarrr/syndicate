@@ -134,6 +134,7 @@ header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-be
 .tbl .pcs{font-size:12px;color:var(--muted)}
 .save{color:var(--good);font-weight:600}
 .save.neg{color:var(--bad)}
+.tag .rm{color:var(--tag-ink)}
 .rm{border:0;background:transparent;color:var(--muted);font-size:12px;padding:0;text-decoration:underline}
 .emptybox{background:var(--surface);border:1px dashed var(--line);border-radius:10px;padding:14px;font-size:14px;color:var(--muted);display:flex;flex-direction:column;gap:10px;align-items:flex-start}
 .ex{display:flex;flex-wrap:wrap;gap:6px}
@@ -202,12 +203,21 @@ footer{color:var(--muted);font-size:12.5px;border-top:1px solid var(--line);padd
     <section class="col col-lot">
       <div class="col-h"><h2>Bales on the market</h2><small>wholesale lots</small></div>
       <div id="lots" class="col"></div>
+      <form class="add" id="baleForm">
+        <label for="baleIn">List a bale in plain English (supplier side)</label>
+        <textarea id="baleIn" placeholder="e.g. Lahore Rag House: Mixed Workwear Bale, Grade A/B, 52 kg. 14 Carhartt jackets, 26 workwear trousers, 34 flannels. Asking £1,890, lowest £1,395."></textarea>
+        <div class="ex" id="baleExamples"></div>
+        <div class="row">
+          <button class="btn" type="submit" id="baleBtn">List bale</button>
+          <span class="note" id="baleNote">The lowest price stays private to the supplier's agent.</span>
+        </div>
+      </form>
     </section>
   </div>
 
   <div id="split" hidden></div>
 
-  <footer>Built for the Grok Bot Commerce London Hackathon, 26 Sept 2026. Prices come from a rules engine that can never exceed a reseller’s mandate; Grok voices the agents and reads the briefs. Suppliers, resellers and prices are fictional sample data. No payment is taken.</footer>
+  <footer>Built for the Grok Bot Commerce London Hackathon, 26 Sept 2026. Prices come from a rules engine that can never exceed a reseller’s mandate; Grok voices the agents and reads the briefs. Example suppliers, resellers and prices are fictional sample data. No payment is taken.</footer>
 </div>
 
 <script>
@@ -222,14 +232,38 @@ const CATS = {
   leather:{label:"Leather jackets", small:40, kw:/leather/i}
 };
 
-const LOTS = [
-  {id:"L1", name:"Mixed Workwear Bale", supplier:"Lahore Rag House", grade:"A/B", kg:52, ask:1890, floor:1395,
-   items:{carhartt:14, workwear:26, flannel:34, denimj:10, fleece:16}},
-  {id:"L2", name:"90s Sportswear Box", supplier:"Jebel Ali Reclaim", grade:"A", kg:38, ask:1420, floor:1160,
-   items:{sport:40, fleece:30, y2k:45}},
-  {id:"L3", name:"Leather & Denim Bale", supplier:"Bhiwandi Vintage Mill", grade:"B", kg:60, ask:2150, floor:1780,
-   items:{leather:22, denimj:30, workwear:18}}
+const EX_BALES = [
+  "Lahore Rag House: Mixed Workwear Bale, Grade A/B, 52 kg. 14 Carhartt jackets, 26 workwear trousers, 34 flannel shirts, 10 Levi's denim jackets, 16 fleeces. Asking £1,890, lowest £1,395.",
+  "Jebel Ali Reclaim: 90s Sportswear Box, Grade A, 38 kg. 40 sportswear jackets, 30 fleeces, 45 Y2K graphic tees. Asking £1,420, lowest £1,160.",
+  "Bhiwandi Vintage Mill: Leather & Denim Bale, Grade B, 60 kg. 22 leather jackets, 30 denim jackets, 18 workwear trousers. Asking £2,150, lowest £1,780."
 ];
+let lots = [];
+
+// Reads a supplier's plain-English listing into a bale. Returns {error} if it can't.
+function parseBale(text){
+  const money = re => { const m = text.match(re); return m ? +m[1].replace(/,/g, "") : 0; };
+  const ask = money(/(?:asking|ask|price)\D{0,6}([\d,]+)/i);
+  let floor = money(/(?:lowest|minimum|min|floor|reserve|at least)\D{0,6}([\d,]+)/i);
+  let body = text.replace(/(?:asking|ask|price|lowest|minimum|min|floor|reserve|at least)\D{0,6}[\d,]+/gi, "").replace(/\d+(?:\.\d+)?\s*kg/gi, "");
+  const head = text.split(/[.:]/)[0];
+  const hasColon = text.includes(":");
+  const supplier = hasColon ? head.trim().slice(0, 40) : "Independent supplier";
+  const name = (hasColon ? (text.split(":")[1] || "") : text).split(/[,.]/)[0].trim().slice(0, 40) || "Wholesale bale";
+  const grade = (text.match(/grade\s+([A-C](?:\s*\/\s*[A-C])?)/i) || [])[1] || "A/B";
+  const items = {};
+  for (const m of body.matchAll(/(?<![£\d,])(\d+)\s+(?:x\s+)?([a-z'][^,.;£]*)/gi)){
+    const n = +m[1], phrase = m[2];
+    if (!n || n > 500) continue;
+    const k = Object.keys(CATS).find(k => CATS[k].kw.test(phrase));
+    if (k) items[k] = (items[k] || 0) + n;
+  }
+  const pcs = Object.values(items).reduce((a,b) => a+b, 0);
+  if (!ask) return {error:"Add an asking price, e.g. \"asking £1,500\"."};
+  if (!pcs) return {error:"List what's inside with counts, e.g. \"20 flannels, 15 fleeces\"."};
+  if (!floor || floor > ask) floor = Math.round(ask * 0.75 / 5) * 5;
+  const kg = +((text.match(/(\d+(?:\.\d+)?)\s*kg/i) || [])[1] || Math.round(pcs * 0.5));
+  return {id:"L" + Date.now() + Math.random().toString(36).slice(2,6), name, supplier, grade:grade.replace(/\s/g, ""), kg, ask, floor, items, listing:text};
+}
 
 const SEED = [
   {name:"Amara", shop:"Depop", brief:"Carhartt jackets for my Depop. Up to £38 each, max 12. Budget £450.",
@@ -252,13 +286,21 @@ const sleep = ms => new Promise(r => { const t = setTimeout(r, ms); timers.push(
 
 function reset(){
   timers.forEach(clearTimeout); timers = []; running = false;
-  agents = [];
+  agents = []; lots = [];
   state = {};
   $("#feed").innerHTML = '<li class="empty">Press <b>Run the syndicate</b>. The agents will scan the bales, form a buying group and negotiate here live.</li>';
   $("#track").innerHTML = ""; $("#tMin").textContent = ""; $("#tMax").textContent = "";
   $("#roomLabel").textContent = "idle";
   $("#split").hidden = true; $("#split").innerHTML = "";
   setStep(1, false);
+  refresh();
+}
+
+function loadExampleBales(){
+  if (running) return;
+  const have = new Set(lots.map(l => l.name));
+  EX_BALES.map(parseBale).forEach(b => { if (!b.error && !have.has(b.name)) lots.push(b); });
+  state = {}; $("#split").hidden = true;
   refresh();
 }
 
@@ -272,7 +314,7 @@ function loadExamples(){
 
 function scoreAll(){
   const scores = {};
-  for (const l of LOTS){
+  for (const l of lots){
     const sc = allocate(l);
     sc.ok = sc.members.length >= 2 && sc.total >= l.floor;
     sc.why = sc.members.length < 2 ? "Needs 2+ buyers" : "Not enough demand yet";
@@ -286,8 +328,10 @@ function refresh(highlightId){
   if (!running && !state.pick) state.scores = agents.length ? scoreAll() : null;
   renderAgents(highlightId); renderLots();
   const n = agents.length;
-  $("#run").disabled = running || n < 2;
-  $("#runHint").textContent = n < 2 ? `Add ${2 - n} more reseller${n === 1 ? "" : "s"} to run` : "";
+  $("#run").disabled = running || n < 2 || !lots.length;
+  $("#runHint").textContent = !lots.length && n < 2 ? "Add a bale and 2+ resellers to run"
+    : !lots.length ? "List at least one bale to run"
+    : n < 2 ? `Add ${2 - n} more reseller${n === 1 ? "" : "s"} to run` : "";
 }
 
 function setStep(n, doneUpTo = true){
@@ -348,7 +392,13 @@ function allocate(lot){
 }
 
 function renderLots(){
-  $("#lots").innerHTML = LOTS.map(l => {
+  if (!lots.length){
+    $("#lots").innerHTML = `<div class="emptybox"><span>No bales listed yet. A supplier lists a bale below; its agent keeps the lowest price private.</span>
+      <button class="btn" type="button" id="loadBales">Load example bales (3)</button></div>`;
+    $("#loadBales").onclick = loadExampleBales;
+    return;
+  }
+  $("#lots").innerHTML = lots.map(l => {
     const pcs = Object.values(l.items).reduce((s,n) => s+n, 0);
     const sc = state.scores && state.scores[l.id];
     const cls = state.pick ? (state.pick === l.id ? " pick" : " out") : "";
@@ -359,13 +409,18 @@ function renderLots(){
       <span class="v ${sc.ok ? "ok" : "no"}">${sc.ok ? "Viable" : esc(sc.why)}</span></div>`;
     }
     return `<article class="lot${cls}">
-      <div class="tag"><strong>${esc(l.name)}</strong><span>${esc(l.supplier)} · Grade ${l.grade} · ${l.kg} kg · ${pcs} pcs</span></div>
+      <div class="tag"><strong>${esc(l.name)}</strong><span>${esc(l.supplier)} · Grade ${esc(l.grade)} · ${l.kg} kg · ${pcs} pcs${running || state.pick ? "" : ` · <button class="rm rm-lot" type="button" data-id="${l.id}">remove</button>`}</span></div>
       <div class="lot-body">
         <table class="manifest">${Object.entries(l.items).map(([c,n]) => `<tr><td>${esc(CATS[c].label)}</td><td>${n} pcs</td></tr>`).join("")}
         <tr><td><b>Supplier asking</b></td><td><b>${gbp(l.ask)}</b></td></tr></table>
         ${verdict}
       </div></article>`;
   }).join("");
+  $("#lots").querySelectorAll(".rm-lot").forEach(b => b.onclick = () => {
+    if (running) return;
+    lots = lots.filter(l => l.id !== b.dataset.id);
+    state = {}; $("#split").hidden = true; refresh();
+  });
 }
 
 function say(kind, who, html){
@@ -404,14 +459,14 @@ async function run(){
   // 2 discover
   setStep(2); $("#roomLabel").textContent = "scanning bales";
   state.scores = {};
-  for (const l of LOTS){
+  for (const l of lots){
     const sc = scoreAll()[l.id];
     state.scores[l.id] = sc;
     renderLots();
     say("sys", "", `Scanned <b>${esc(l.name)}</b>: ${sc.placed} of ${sc.pieces} pieces match someone's mandate (${Math.round(sc.coverage*100)}%).`);
     await sleep(800);
   }
-  const viable = LOTS.filter(l => state.scores[l.id].ok).sort((a,b) => state.scores[b.id].total / b.ask - state.scores[a.id].total / a.ask);
+  const viable = lots.filter(l => state.scores[l.id].ok).sort((a,b) => state.scores[b.id].total / b.ask - state.scores[a.id].total / a.ask);
   if (!viable.length){
     say("sys", "", "Not enough combined demand for any bale yet. Add more resellers or raise some price limits, then run again. Nobody is charged.");
     running = false; refresh(); return;
@@ -436,7 +491,7 @@ async function run(){
     b => `We're ${sc.members.length} resellers buying together. ${sc.placed} of ${sc.pieces} pieces already have a home. We can do ${P(b)}.`,
     b => `We pay within 24 hours and collect the whole bale in one shipment. ${P(b)}.`,
     b => leftTxt ? `${esc(leftTxt)} have no buyer in our group. We'll still take the full bale so you don't have to re-sort. ${P(b)}.` : `One order, one invoice, no re-sorting for you. ${P(b)}.`,
-    b => `Grade B pieces resell for less, and ours will be listed within a week. Moving to ${P(b)}.`,
+    b => `Some pieces will need cleaning and repairs before resale, and ours will be listed within a week. Moving to ${P(b)}.`,
     b => `If this goes well the same group reorders monthly. ${P(b)}.`,
     b => `We're close to our limit. ${P(b)}.`,
     b => `${P(b)} is as high as this group can go.`,
@@ -444,7 +499,7 @@ async function run(){
   ];
   const supLines = [
     s => `${esc(lot.name)}, ${sc.pieces} pieces, Grade ${lot.grade}, ${lot.kg} kg. Asking ${P(s)}.`,
-    s => `The Carhartt and denim in this bale are strong sellers. I can move to ${P(s)}.`,
+    s => `The ${esc(CATS[Object.entries(lot.items).sort((a,b) => b[1]-a[1])[0][0]].label.toLowerCase())} in this bale are strong sellers. I can move to ${P(s)}.`,
     s => `A full-bale collection helps us. ${P(s)}.`,
     s => `Repeat business is interesting. ${P(s)}.`,
     s => `I have other buyers for this bale. ${P(s)}.`,
@@ -621,6 +676,21 @@ const EXAMPLES = [
 ];
 $("#examples").innerHTML = '<span class="note">Try:</span>' + EXAMPLES.map((t,i) => `<button type="button" data-i="${i}">${esc(t.split(",")[0])}</button>`).join("");
 $("#examples").querySelectorAll("button").forEach(b => b.onclick = () => { $("#briefIn").value = EXAMPLES[+b.dataset.i]; $("#briefIn").focus(); });
+
+$("#baleExamples").innerHTML = '<span class="note">Try:</span>' + EX_BALES.map((t,i) => `<button type="button" data-i="${i}">${esc(t.split(":")[1].split(",")[0].trim())}</button>`).join("");
+$("#baleExamples").querySelectorAll("button").forEach(b => b.onclick = () => { $("#baleIn").value = EX_BALES[+b.dataset.i]; $("#baleIn").focus(); });
+$("#baleForm").addEventListener("submit", e => {
+  e.preventDefault();
+  const text = $("#baleIn").value.trim();
+  if (!text || running) return;
+  const b = parseBale(text);
+  if (b.error){ $("#baleNote").textContent = b.error; return; }
+  lots.push(b);
+  $("#baleIn").value = "";
+  $("#baleNote").textContent = `${b.name} listed by ${b.supplier}: ${Object.values(b.items).reduce((x,y)=>x+y,0)} pieces, asking ${gbp(b.ask)}. Lowest price kept private.`;
+  state = {}; $("#split").hidden = true;
+  refresh();
+});
 
 $("#run").onclick = run;
 $("#reset").onclick = reset;
